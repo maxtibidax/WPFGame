@@ -4,7 +4,8 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
-
+//Федя крутой
+//умный жесть
 namespace Game2048
 {
     public partial class MainWindow : Window
