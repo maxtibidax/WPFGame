@@ -4,8 +4,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
-//Федя крутой
-//умный жесть
+
 namespace Game2048
 {
     public partial class MainWindow : Window
@@ -15,11 +14,38 @@ namespace Game2048
         private Border[,] tiles;
         private Random random;
         private int score;
+        private const string SaveFilePath = "game2048_save.json";
 
         public MainWindow()
         {
             InitializeComponent();
-            InitializeGame();
+            Closing += MainWindow_Closing;
+            LoadGameOrStartNew();
+        }
+
+        private void LoadGameOrStartNew()
+        {
+            if (File.Exists(SaveFilePath))
+            {
+                var result = MessageBox.Show(
+                    "Найдено сохранение предыдущей игры. Загрузить его?",
+                    "Загрузка игры",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Question);
+
+                if (result == MessageBoxResult.Yes)
+                {
+                    LoadGame();
+                }
+                else
+                {
+                    InitializeGame();
+                }
+            }
+            else
+            {
+                InitializeGame();
+            }
         }
 
         private void InitializeGame()
@@ -34,6 +60,77 @@ namespace Game2048
             UpdateUI();
         }
 
+        private void MainWindow_Closing(object sender, System.ComponentModel.CancelEventArgs e)
+        {
+            SaveGame();
+        }
+
+        private void SaveGame()
+        {
+            try
+            {
+                // Конвертируем 2D массив в 1D для сериализации
+                int[] flatBoard = new int[GridSize * GridSize];
+                for (int i = 0; i < GridSize; i++)
+                {
+                    for (int j = 0; j < GridSize; j++)
+                    {
+                        flatBoard[i * GridSize + j] = board[i, j];
+                    }
+                }
+
+                var saveData = new GameSaveData
+                {
+                    Board = flatBoard,
+                    Score = score
+                };
+                string json = JsonSerializer.Serialize(saveData);
+                File.WriteAllText(SaveFilePath, json);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Ошибка при сохранении игры: {ex.Message}");
+            }
+        }
+
+        private void LoadGame()
+        {
+            try
+            {
+                string json = File.ReadAllText(SaveFilePath);
+                var saveData = JsonSerializer.Deserialize<GameSaveData>(json);
+
+                // Конвертируем 1D массив обратно в 2D
+                board = new int[GridSize, GridSize];
+                for (int i = 0; i < GridSize; i++)
+                {
+                    for (int j = 0; j < GridSize; j++)
+                    {
+                        board[i, j] = saveData.Board[i * GridSize + j];
+                    }
+                }
+
+                tiles = new Border[GridSize, GridSize];
+                random = new Random();
+                score = saveData.Score;
+
+                UpdateUI();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Ошибка при загрузке игры: {ex.Message}\nНовая игра будет начата.");
+                InitializeGame();
+            }
+        }
+
+        // Класс для сохранения данных игры с одномерным массивом
+        private class GameSaveData
+        {
+            public int[] Board { get; set; }  // Изменено на одномерный массив
+            public int Score { get; set; }
+        }
+
+        // Остальные методы остаются без изменений
         private void Window_KeyDown(object sender, KeyEventArgs e)
         {
             bool moved = false;
@@ -88,7 +185,6 @@ namespace Game2048
             GameGrid.Children.Add(tile);
             tiles[row, col] = tile;
 
-            // Анимация появления
             var storyboard = (Storyboard)FindResource("TileAppearAnimation");
             Storyboard.SetTarget(storyboard, tile);
             storyboard.Begin();
@@ -96,9 +192,7 @@ namespace Game2048
 
         private void UpdateUI()
         {
-            // Очистка существующих плиток
             GameGrid.Children.Clear();
-            // Добавляем фоновые клетки обратно
             for (int i = 0; i < GridSize; i++)
             {
                 for (int j = 0; j < GridSize; j++)
@@ -151,7 +245,6 @@ namespace Game2048
             };
         }
 
-        // Методы движения остаются без изменений
         private bool MoveUp()
         {
             bool moved = false;
