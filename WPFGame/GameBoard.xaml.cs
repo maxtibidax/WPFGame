@@ -11,12 +11,13 @@ namespace WPFGame
 {
     public partial class GameBoard : UserControl
     {
-        private const int GridSize = 4;
+        private int gridSize = 4; // По умолчанию 4x4
         private int[,] board;
         private Border[,] tiles;
         private Random random;
         private int score;
         private const string SaveFilePath = "game2048_save.json";
+        private const string SettingsFilePath = "game2048_settings.json";
 
         public event Action BackToMenuClicked;
 
@@ -25,7 +26,33 @@ namespace WPFGame
             InitializeComponent();
             this.Focusable = true;
             Loaded += (s, e) => Keyboard.Focus(this);
+            LoadSettings(); // Загружаем настройки перед инициализацией игры
             LoadGameOrStartNew();
+        }
+
+        // Загрузка настроек
+        private void LoadSettings()
+        {
+            if (File.Exists(SettingsFilePath))
+            {
+                try
+                {
+                    string json = File.ReadAllText(SettingsFilePath);
+                    var settings = JsonSerializer.Deserialize<GameSettings>(json);
+                    gridSize = settings.GridSize;
+                }
+                catch (Exception)
+                {
+                    gridSize = 4; // По умолчанию 4x4 при ошибке
+                }
+            }
+        }
+
+        // Обновляем публичный метод для установки размера сетки
+        public void SetGridSize(int size)
+        {
+            gridSize = size;
+            InitializeGame();
         }
 
         // Добавляем публичный метод HandleKeyPress
@@ -88,8 +115,35 @@ namespace WPFGame
 
         public void InitializeGame()
         {
-            board = new int[GridSize, GridSize];
-            tiles = new Border[GridSize, GridSize];
+            // Очистка предыдущего игрового поля
+            GameGrid.Children.Clear();
+            GameGrid.RowDefinitions.Clear();
+            GameGrid.ColumnDefinitions.Clear();
+
+            // Создание новой сетки с нужным размером
+            for (int i = 0; i < gridSize; i++)
+            {
+                GameGrid.RowDefinitions.Add(new RowDefinition());
+                GameGrid.ColumnDefinitions.Add(new ColumnDefinition());
+            }
+
+            // Создание фоновых ячеек для новой сетки
+            for (int i = 0; i < gridSize; i++)
+            {
+                for (int j = 0; j < gridSize; j++)
+                {
+                    var backgroundTile = new Border
+                    {
+                        Style = (Style)FindResource("TileStyle")
+                    };
+                    Grid.SetRow(backgroundTile, i);
+                    Grid.SetColumn(backgroundTile, j);
+                    GameGrid.Children.Add(backgroundTile);
+                }
+            }
+
+            board = new int[gridSize, gridSize];
+            tiles = new Border[gridSize, gridSize];
             random = new Random();
             score = 0;
 
@@ -102,19 +156,20 @@ namespace WPFGame
         {
             try
             {
-                int[] flatBoard = new int[GridSize * GridSize];
-                for (int i = 0; i < GridSize; i++)
+                int[] flatBoard = new int[gridSize * gridSize];
+                for (int i = 0; i < gridSize; i++)
                 {
-                    for (int j = 0; j < GridSize; j++)
+                    for (int j = 0; j < gridSize; j++)
                     {
-                        flatBoard[i * GridSize + j] = board[i, j];
+                        flatBoard[i * gridSize + j] = board[i, j];
                     }
                 }
 
                 var saveData = new GameSaveData
                 {
                     Board = flatBoard,
-                    Score = score
+                    Score = score,
+                    GridSize = gridSize
                 };
                 string json = JsonSerializer.Serialize(saveData);
                 File.WriteAllText(SaveFilePath, json);
@@ -132,16 +187,45 @@ namespace WPFGame
                 string json = File.ReadAllText(SaveFilePath);
                 var saveData = JsonSerializer.Deserialize<GameSaveData>(json);
 
-                board = new int[GridSize, GridSize];
-                for (int i = 0; i < GridSize; i++)
+                // Обновляем размер сетки из сохранения
+                gridSize = saveData.GridSize;
+
+                // Инициализируем UI новым размером
+                GameGrid.Children.Clear();
+                GameGrid.RowDefinitions.Clear();
+                GameGrid.ColumnDefinitions.Clear();
+
+                for (int i = 0; i < gridSize; i++)
                 {
-                    for (int j = 0; j < GridSize; j++)
+                    GameGrid.RowDefinitions.Add(new RowDefinition());
+                    GameGrid.ColumnDefinitions.Add(new ColumnDefinition());
+                }
+
+                // Создание фоновых ячеек для загруженной сетки
+                for (int i = 0; i < gridSize; i++)
+                {
+                    for (int j = 0; j < gridSize; j++)
                     {
-                        board[i, j] = saveData.Board[i * GridSize + j];
+                        var backgroundTile = new Border
+                        {
+                            Style = (Style)FindResource("TileStyle")
+                        };
+                        Grid.SetRow(backgroundTile, i);
+                        Grid.SetColumn(backgroundTile, j);
+                        GameGrid.Children.Add(backgroundTile);
                     }
                 }
 
-                tiles = new Border[GridSize, GridSize];
+                board = new int[gridSize, gridSize];
+                for (int i = 0; i < gridSize; i++)
+                {
+                    for (int j = 0; j < gridSize; j++)
+                    {
+                        board[i, j] = saveData.Board[i * gridSize + j];
+                    }
+                }
+
+                tiles = new Border[gridSize, gridSize];
                 random = new Random();
                 score = saveData.Score;
 
@@ -158,6 +242,7 @@ namespace WPFGame
         {
             public int[] Board { get; set; }
             public int Score { get; set; }
+            public int GridSize { get; set; } = 4; // Добавляем хранение размера сетки
         }
 
         private void BackToMenu_Click(object sender, RoutedEventArgs e)
@@ -196,10 +281,19 @@ namespace WPFGame
 
         private void UpdateUI()
         {
-            GameGrid.Children.Clear();
-            for (int i = 0; i < GridSize; i++)
+            // Удаляем только плитки, а не фоновые ячейки
+            for (int i = GameGrid.Children.Count - 1; i >= 0; i--)
             {
-                for (int j = 0; j < GridSize; j++)
+                UIElement element = GameGrid.Children[i];
+                if (element is Border border && border.Child is TextBlock)
+                {
+                    GameGrid.Children.RemoveAt(i);
+                }
+            }
+
+            for (int i = 0; i < gridSize; i++)
+            {
+                for (int j = 0; j < gridSize; j++)
                 {
                     if (board[i, j] != 0)
                     {
@@ -213,9 +307,9 @@ namespace WPFGame
         private void AddRandomTile()
         {
             var emptyCells = new System.Collections.Generic.List<(int, int)>();
-            for (int i = 0; i < GridSize; i++)
+            for (int i = 0; i < gridSize; i++)
             {
-                for (int j = 0; j < GridSize; j++)
+                for (int j = 0; j < gridSize; j++)
                 {
                     if (board[i, j] == 0)
                         emptyCells.Add((i, j));
@@ -252,9 +346,9 @@ namespace WPFGame
         private bool MoveUp()
         {
             bool moved = false;
-            for (int j = 0; j < GridSize; j++)
+            for (int j = 0; j < gridSize; j++)
             {
-                for (int i = 1; i < GridSize; i++)
+                for (int i = 1; i < gridSize; i++)
                 {
                     if (board[i, j] != 0)
                     {
@@ -311,12 +405,12 @@ namespace WPFGame
         {
             for (int t = 0; t < times; t++)
             {
-                int[,] newBoard = new int[GridSize, GridSize];
-                for (int i = 0; i < GridSize; i++)
+                int[,] newBoard = new int[gridSize, gridSize];
+                for (int i = 0; i < gridSize; i++)
                 {
-                    for (int j = 0; j < GridSize; j++)
+                    for (int j = 0; j < gridSize; j++)
                     {
-                        newBoard[j, GridSize - 1 - i] = board[i, j];
+                        newBoard[j, gridSize - 1 - i] = board[i, j];
                     }
                 }
                 board = newBoard;
@@ -325,20 +419,20 @@ namespace WPFGame
 
         private bool IsGameOver()
         {
-            for (int i = 0; i < GridSize; i++)
+            for (int i = 0; i < gridSize; i++)
             {
-                for (int j = 0; j < GridSize; j++)
+                for (int j = 0; j < gridSize; j++)
                 {
                     if (board[i, j] == 0) return false;
                 }
             }
 
-            for (int i = 0; i < GridSize; i++)
+            for (int i = 0; i < gridSize; i++)
             {
-                for (int j = 0; j < GridSize; j++)
+                for (int j = 0; j < gridSize; j++)
                 {
-                    if (i < GridSize - 1 && board[i, j] == board[i + 1, j]) return false;
-                    if (j < GridSize - 1 && board[i, j] == board[i, j + 1]) return false;
+                    if (i < gridSize - 1 && board[i, j] == board[i + 1, j]) return false;
+                    if (j < gridSize - 1 && board[i, j] == board[i, j + 1]) return false;
                 }
             }
 
